@@ -107,7 +107,7 @@ def parse_text_response(text: str, search_results: List[Dict[str, Any]]) -> Dict
 
 
 def get_llm():
-    """Initialize the Groq LLM client."""
+    """Initialize the Groq LLM client with deterministic settings."""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY environment variable is not set")
@@ -115,8 +115,9 @@ def get_llm():
     return ChatGroq(
         model="llama-3.1-8b-instant",
         api_key=api_key,
-        temperature=0.1,
-        max_tokens=2048
+        temperature=0,  # Deterministic output
+        max_tokens=2048,
+        seed=42  # Fixed seed for reproducibility
     )
 
 
