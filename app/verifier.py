@@ -120,10 +120,9 @@ def get_llm():
     )
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def search_web(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+def search_web(query: str, max_results: int = 8) -> List[Dict[str, Any]]:
     """
-    Search the web using DuckDuckGo.
+    Search the web using DuckDuckGo with multiple retry strategies.
     
     Args:
         query: Search query string
@@ -132,23 +131,68 @@ def search_web(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
     Returns:
         List of search results with title, url, and snippet
     """
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
+    import time
+    
+    formatted_results = []
+    
+    # Try multiple search strategies
+    search_queries = [
+        query,
+        f"{query} facts statistics",
+        f'"{query}"',  # Exact match
+    ]
+    
+    for search_query in search_queries:
+        if formatted_results:
+            break
             
-        formatted_results = []
-        for r in results:
-            formatted_results.append({
-                "title": r.get("title", ""),
-                "url": r.get("href", r.get("link", "")),
-                "snippet": r.get("body", r.get("snippet", ""))
-            })
-            
-        return formatted_results
-        
-    except Exception as e:
-        print(f"Search error: {e}")
-        return []
+        for attempt in range(3):
+            try:
+                ddgs = DDGS()
+                results = list(ddgs.text(
+                    search_query, 
+                    max_results=max_results,
+                    region='wt-wt',  # Worldwide
+                    safesearch='off'
+                ))
+                
+                for r in results:
+                    formatted_results.append({
+                        "title": r.get("title", ""),
+                        "url": r.get("href", r.get("link", "")),
+                        "snippet": r.get("body", r.get("snippet", ""))
+                    })
+                
+                if formatted_results:
+                    break
+                    
+            except Exception as e:
+                print(f"Search attempt {attempt + 1} failed: {e}")
+                time.sleep(1 + attempt)  # Incremental delay
+                continue
+    
+    return formatted_results
+
+
+def search_with_keywords(claim: str) -> List[Dict[str, Any]]:
+    """
+    Extract key terms from claim and search.
+    """
+    import re
+    
+    # Extract numbers, years, percentages
+    numbers = re.findall(r'\d+(?:\.\d+)?%?', claim)
+    
+    # Extract capitalized words (likely proper nouns)
+    proper_nouns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', claim)
+    
+    # Build focused search query
+    key_terms = proper_nouns[:3] + numbers[:2]
+    if key_terms:
+        focused_query = " ".join(key_terms)
+        return search_web(focused_query)
+    
+    return []
 
 
 def format_search_results(results: List[Dict[str, Any]]) -> str:
@@ -245,13 +289,29 @@ def verify_single_claim(claim_data: Dict[str, Any]) -> Dict[str, Any]:
     
     claim_text = claim_data.get("claim", "")
     search_query = claim_data.get("search_query", claim_text)
+    entities = claim_data.get("entities", [])
     
-    # Perform web search
+    # Strategy 1: Use the optimized search query from claim extraction
     search_results = search_web(search_query)
     
-    # If first search yields no results, try with the claim text directly
-    if not search_results and search_query != claim_text:
+    # Strategy 2: Try with the claim text directly
+    if not search_results:
         search_results = search_web(claim_text)
+    
+    # Strategy 3: Try keyword-based search
+    if not search_results:
+        search_results = search_with_keywords(claim_text)
+    
+    # Strategy 4: Search using entities
+    if not search_results and entities:
+        entity_query = " ".join(entities[:3])
+        search_results = search_web(entity_query)
+    
+    # Strategy 5: Simplify the claim and search
+    if not search_results:
+        # Take first 50 chars of claim
+        simple_query = claim_text[:50].strip()
+        search_results = search_web(simple_query)
     
     # Verify with LLM
     verification = verify_claim_with_llm(llm, claim_text, search_results)

@@ -48,23 +48,28 @@ Return your response as a JSON array with this structure:
 
 Only include claims that can be objectively verified. Be thorough but precise."""
 
-VERIFICATION_SYSTEM_PROMPT = """You are a fact-checker that ONLY outputs JSON. Verify claims against search results.
+VERIFICATION_SYSTEM_PROMPT = """You are a fact-checker. Output ONLY valid JSON.
 
-STATUS OPTIONS (use exactly one):
-- "verified" = Claim is accurate and confirmed by sources
-- "inaccurate" = Claim has errors or is outdated (provide correct_value)
-- "false" = Claim is wrong or unsupported
+STATUS OPTIONS:
+- "verified" = Claim is accurate based on sources OR your knowledge
+- "inaccurate" = Claim has wrong numbers/dates (provide correct_value)  
+- "false" = Claim is demonstrably wrong or fabricated
 
-ALWAYS respond with ONLY a JSON object, no other text."""
+Use your knowledge if search results are limited. Be helpful and informative."""
 
-VERIFICATION_USER_PROMPT = """CLAIM: {claim}
+VERIFICATION_USER_PROMPT = """Verify this claim:
+"{claim}"
 
-SOURCES:
+Search results:
 {search_results}
 
-Respond with ONLY this JSON (no markdown, no explanation outside JSON):
-{{"status": "verified", "explanation": "why this status based on sources", "correct_value": null, "confidence": "high", "sources": [{{"title": "source name", "url": "url", "relevance": "how it helped"}}]}}
+Instructions:
+1. If sources confirm the claim → status: "verified"
+2. If claim has wrong numbers/outdated info → status: "inaccurate", include correct_value
+3. If claim is false/fabricated → status: "false"
+4. If no search results, use your knowledge to verify common facts
 
-Choose status: "verified" if sources confirm it, "inaccurate" if outdated/wrong numbers (include correct_value), "false" if no evidence or contradicted.
+Respond with ONLY this JSON:
+{{"status": "verified", "explanation": "Detailed explanation of why this claim is verified/inaccurate/false, citing specific evidence", "correct_value": null, "confidence": "high", "sources": [{{"title": "Source Title", "url": "https://example.com", "relevance": "What this source says"}}]}}
 
-JSON response:"""
+Your JSON response:"""
