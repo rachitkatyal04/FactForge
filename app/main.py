@@ -357,7 +357,16 @@ def render_claim_card(claim: dict, index: int):
     status_class = status if status in ["verified", "inaccurate", "false"] else "false"
     tag_class = f"tag-{status_class}"
     
-    with st.expander(f"{status_emoji} {claim.get('claim', 'Unknown claim')[:100]}...", expanded=False):
+    # Add special indicators for myths and outdated
+    is_myth = claim.get("is_myth", False)
+    is_outdated = claim.get("is_outdated", False)
+    special_indicator = ""
+    if is_myth:
+        special_indicator = "🚫 MYTH: "
+    elif is_outdated:
+        special_indicator = "📅 OUTDATED: "
+    
+    with st.expander(f"{status_emoji} {special_indicator}{claim.get('claim', 'Unknown claim')[:100]}...", expanded=False):
         # Claim text
         st.markdown(f"""
         <div class="claim-text">{claim.get('claim', 'Unknown claim')}</div>
@@ -367,13 +376,37 @@ def render_claim_card(claim: dict, index: int):
         claim_type = claim.get("claim_type", "unknown")
         confidence = claim.get("confidence", "low")
         
-        st.markdown(f"""
+        tags_html = f"""
         <div class="claim-meta">
             <span class="claim-tag {tag_class}">{status.upper()}</span>
             <span class="claim-tag tag-type">{claim_type}</span>
             <span class="claim-tag tag-type">Confidence: {confidence}</span>
-        </div>
-        """, unsafe_allow_html=True)
+        """
+        
+        # Add myth/outdated tags
+        if is_myth:
+            tags_html += '<span class="claim-tag tag-false">🚫 MYTH DETECTED</span>'
+        if is_outdated:
+            tags_html += '<span class="claim-tag tag-inaccurate">📅 OUTDATED DATA</span>'
+        
+        tags_html += "</div>"
+        st.markdown(tags_html, unsafe_allow_html=True)
+        
+        # Warning box for myths
+        if is_myth:
+            st.markdown("""
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                <strong style="color: #ef4444;">⚠️ This is a widely circulated myth that has been debunked.</strong>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Warning box for outdated data
+        if is_outdated:
+            st.markdown("""
+            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                <strong style="color: #f59e0b;">⏰ This data appears to be outdated. Check below for current values.</strong>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Explanation
         explanation = claim.get("explanation", "No explanation available")
@@ -384,12 +417,12 @@ def render_claim_card(claim: dict, index: int):
         </div>
         """, unsafe_allow_html=True)
         
-        # Correct value (if inaccurate)
+        # Correct value (if inaccurate or outdated)
         correct_value = claim.get("correct_value")
-        if correct_value and status == "inaccurate":
+        if correct_value:
             st.markdown(f"""
             <div class="correct-value">
-                <div class="correct-value-label">✏️ Corrected Value</div>
+                <div class="correct-value-label">✅ Correct/Current Value</div>
                 <div class="correct-value-text">{correct_value}</div>
             </div>
             """, unsafe_allow_html=True)
@@ -419,14 +452,14 @@ def main():
         """)
         
         st.markdown("---")
-        st.markdown("### 🎯 What we verify")
+        st.markdown("### 🎯 What we catch")
         st.markdown("""
-        - Statistics & numbers
-        - Dates & timelines  
-        - Financial figures
-        - Technical facts
-        - Scientific claims
-        - Historical events
+        - 🔢 **Statistics** - percentages, numbers
+        - 💰 **Financial** - stock prices, market caps
+        - 📅 **Dates** - founding years, events
+        - 🚫 **Myths** - debunked claims
+        - ⏰ **Outdated** - old data presented as current
+        - 🔬 **Scientific** - research claims
         """)
         
         st.markdown("---")
