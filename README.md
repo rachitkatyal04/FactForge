@@ -1,10 +1,13 @@
 # 🔍 FactForge - AI-Powered PDF Fact Checker
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://factforge.streamlit.app)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://fact-forge.streamlit.app)
 
 **FactForge** is an intelligent fact-checking application that verifies factual claims in PDF documents before publishing. It uses AI to extract verifiable claims and cross-references them against live web sources.
 
-![FactForge Screenshot](https://via.placeholder.com/800x400?text=FactForge+Screenshot)
+## 📸 Glimpse of FactForge
+<img src="<img width="1918" height="925" alt="image" src="https://github.com/user-attachments/assets/a87dc1c6-ea15-4e08-a069-5046b7201acc" />
+
+
 
 ## 🎯 Features
 
