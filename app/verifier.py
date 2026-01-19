@@ -8,7 +8,10 @@ import re
 import os
 import time
 from typing import Dict, Any, List, Optional
-from duckduckgo_search import DDGS
+try:
+    from ddgs import DDGS
+except ImportError:
+    from duckduckgo_search import DDGS
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -33,9 +36,99 @@ KNOWN_MYTHS = {
     "bulls.*red": {"status": "false", "correct": "Bulls are colorblind to red; they react to movement", "explanation": "Bulls charge at the cape's movement, not its color."},
 }
 
+# TRUSTED SOURCES - Prioritize these domains
+TRUSTED_DOMAINS = [
+    # Official & Government
+    "gov", ".gov.", "gov.in", "gov.uk", "europa.eu", "un.org", "who.int", "worldbank.org", "imf.org",
+    # Major News & Media
+    "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk", "nytimes.com", "washingtonpost.com",
+    "theguardian.com", "economist.com", "bloomberg.com", "cnbc.com", "forbes.com", "wsj.com",
+    "timesofindia.com", "hindustantimes.com", "ndtv.com", "thehindu.com", "indianexpress.com",
+    # Fact-Checkers
+    "snopes.com", "factcheck.org", "politifact.com", "fullfact.org", "altnews.in",
+    # Reference & Academic
+    "wikipedia.org", "britannica.com", "encyclopedia.com", "scholar.google.com",
+    "sciencedirect.com", "nature.com", "ncbi.nlm.nih.gov", "pubmed.gov",
+    # Business & Finance
+    "yahoo.com/finance", "finance.yahoo.com", "marketwatch.com", "investing.com",
+    "moneycontrol.com", "nseindia.com", "bseindia.com", "sec.gov", "sebi.gov.in",
+    # Tech & Science
+    "techcrunch.com", "wired.com", "arstechnica.com", "theverge.com", "cnet.com",
+    "nasa.gov", "space.com", "scientificamerican.com",
+    # Statistics
+    "statista.com", "worldometers.info", "ourworldindata.org", "data.gov",
+]
+
+# UNTRUSTED SOURCES - Avoid or deprioritize these
+BLOCKED_DOMAINS = [
+    # Content farms & unreliable
+    "medium.com", "quora.com", "answers.com", "ehow.com", "wikihow.com",
+    # Known misinformation
+    "naturalnews.com", "infowars.com", "breitbart.com", "dailymail.co.uk",
+    # Low quality aggregators
+    "buzzfeed.com", "huffpost.com",
+    # Suspicious TLDs and patterns
+    ".cn", ".ru", "baidu.com", "qq.com", "sohu.com", "163.com", "sina.com",
+    # SEO spam patterns
+    "blogspot", "wordpress.com", "tumblr.com", "weebly.com",
+]
+
+
+def is_trusted_source(url: str) -> bool:
+    """Check if URL is from a trusted source."""
+    url_lower = url.lower()
+    for domain in TRUSTED_DOMAINS:
+        if domain in url_lower:
+            return True
+    return False
+
+
+def is_blocked_source(url: str) -> bool:
+    """Check if URL is from a blocked/unreliable source."""
+    url_lower = url.lower()
+    for domain in BLOCKED_DOMAINS:
+        if domain in url_lower:
+            return True
+    return False
+
+
+def score_source(result: Dict[str, Any]) -> int:
+    """Score a search result based on source reliability."""
+    url = result.get("url", "").lower()
+    score = 50  # Base score
+    
+    # Boost for trusted sources
+    if is_trusted_source(url):
+        score += 100
+    
+    # Heavy penalty for blocked sources
+    if is_blocked_source(url):
+        score -= 200
+    
+    # Boost for specific high-authority domains
+    if any(d in url for d in [".gov", "reuters", "apnews", "bbc", "wikipedia", "snopes", "factcheck"]):
+        score += 50
+    
+    # Boost for having snippet content
+    if result.get("snippet"):
+        score += 10
+    
+    return score
+
+
+def filter_and_rank_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter out unreliable sources and rank by trustworthiness."""
+    # Remove blocked sources
+    filtered = [r for r in results if not is_blocked_source(r.get("url", ""))]
+    
+    # Sort by trust score (highest first)
+    filtered.sort(key=lambda r: score_source(r), reverse=True)
+    
+    return filtered
+
 
 def get_llm():
-    """Initialize the Groq LLM client with deterministic settings."""
+    """Initialize the Groq LLM client - fast model."""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY environment variable is not set")
@@ -44,8 +137,7 @@ def get_llm():
         model="llama-3.1-8b-instant",
         api_key=api_key,
         temperature=0,
-        max_tokens=2048,
-        seed=42
+        max_tokens=1024
     )
 
 
@@ -81,82 +173,55 @@ def extract_numbers(text: str) -> List[str]:
     return numbers
 
 
-def search_web(query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+def search_web(query: str, max_results: int = 8) -> List[Dict[str, Any]]:
     """
-    Advanced web search with multiple strategies and retries.
+    Fast, accurate web search with trusted source filtering.
+    Single optimized search - no retries for speed.
     """
-    formatted_results = []
+    query = query.strip()[:150]
     
-    # Clean and prepare query
-    query = query.strip()[:200]  # Limit query length
-    
-    # Multiple search strategies
-    search_variations = [
-        query,
-        f"{query} fact check",
-        f"{query} statistics data",
-        f'"{query}"',  # Exact match
-    ]
-    
-    for search_query in search_variations:
-        if len(formatted_results) >= max_results:
-            break
-            
-        for attempt in range(3):
-            try:
-                ddgs = DDGS()
-                results = list(ddgs.text(
-                    search_query,
-                    max_results=max_results,
-                    region='wt-wt',
-                    safesearch='off'
-                ))
-                
-                for r in results:
-                    result = {
-                        "title": r.get("title", ""),
-                        "url": r.get("href", r.get("link", "")),
-                        "snippet": r.get("body", r.get("snippet", ""))
-                    }
-                    # Avoid duplicates
-                    if result not in formatted_results:
-                        formatted_results.append(result)
-                
-                if formatted_results:
-                    break
-                    
-            except Exception as e:
-                print(f"Search attempt {attempt + 1} failed: {e}")
-                time.sleep(1.5 * (attempt + 1))
-                continue
+    try:
+        ddgs = DDGS()
+        results = list(ddgs.text(query, max_results=max_results + 3, region='wt-wt'))
         
-        if formatted_results:
-            break
-    
-    return formatted_results[:max_results]
+        formatted = []
+        for r in results:
+            formatted.append({
+                "title": r.get("title", ""),
+                "url": r.get("href", r.get("link", "")),
+                "snippet": r.get("body", r.get("snippet", ""))
+            })
+        
+        # Filter out blocked sources, rank by trust
+        return filter_and_rank_results(formatted)[:max_results]
+    except Exception as e:
+        print(f"Search failed: {e}")
+        return []
 
 
 def search_with_fact_check_sites(claim: str) -> List[Dict[str, Any]]:
-    """Search specifically on fact-checking websites."""
-    fact_check_query = f"{claim} site:snopes.com OR site:factcheck.org OR site:politifact.com OR site:reuters.com/fact-check"
-    return search_web(fact_check_query, max_results=5)
+    """Fast search on fact-checking websites - single query."""
+    try:
+        ddgs = DDGS()
+        # Combined query for speed
+        query = f"{claim[:80]} fact check"
+        results = list(ddgs.text(query, max_results=4, region='wt-wt'))
+        return [{"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")} for r in results]
+    except:
+        return []
 
 
 def search_financial_data(claim: str, entities: List[str]) -> List[Dict[str, Any]]:
-    """Search for current financial data."""
-    results = []
-    
-    # Extract company names and financial terms
-    for entity in entities[:3]:
-        queries = [
-            f"{entity} stock price 2024",
-            f"{entity} market cap current",
-            f"{entity} revenue latest",
-        ]
-        for q in queries:
-            results.extend(search_web(q, max_results=3))
-    
-    return results
+    """Fast financial data search - single query."""
+    if not entities:
+        return []
+    try:
+        ddgs = DDGS()
+        query = f"{entities[0]} stock price market cap 2024 2025"
+        results = list(ddgs.text(query, max_results=4, region='wt-wt'))
+        return filter_and_rank_results([{"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")} for r in results])
+    except:
+        return []
 
 
 def search_with_keywords(claim: str) -> List[Dict[str, Any]]:
@@ -176,21 +241,39 @@ def search_with_keywords(claim: str) -> List[Dict[str, Any]]:
     return []
 
 
+def search_statistics(claim: str) -> List[Dict[str, Any]]:
+    """Fast statistics search - single query."""
+    try:
+        ddgs = DDGS()
+        query = f"{claim[:80]} statistics data"
+        results = list(ddgs.text(query, max_results=3, region='wt-wt'))
+        return filter_and_rank_results([{"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")} for r in results])
+    except:
+        return []
+
+
 def format_search_results(results: List[Dict[str, Any]]) -> str:
-    """Format search results for LLM analysis."""
+    """Format search results for LLM analysis with source trust indicators."""
     if not results:
-        return "No search results found. Use your knowledge to verify if possible."
+        return "[WARNING] NO SEARCH RESULTS FOUND. Mark as FALSE unless you are 100% certain of the fact."
     
     formatted = []
     for i, r in enumerate(results, 1):
+        title = r.get('title', 'N/A')
+        url = r.get('url', 'N/A')
+        snippet = r.get('snippet', 'N/A')
+        
+        # Add trust indicator
+        trust = "[TRUSTED]" if is_trusted_source(url) else "[Standard]"
+        
         formatted.append(f"""
-[Source {i}]
-Title: {r.get('title', 'N/A')}
-URL: {r.get('url', 'N/A')}
-Content: {r.get('snippet', 'N/A')}
+=== SOURCE {i} {trust} ===
+Title: {title}
+URL: {url}
+Content: {snippet}
 """)
     
-    return "\n".join(formatted)
+    return "\n".join(formatted) + "\n=== END OF SOURCES ==="
 
 
 def extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
@@ -280,7 +363,7 @@ def parse_text_response(text: str, search_results: List[Dict[str, Any]]) -> Dict
     }
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=0.5, min=1, max=3))
 def verify_claim_with_llm(
     llm: ChatGroq,
     claim: str,
@@ -326,8 +409,9 @@ def verify_claim_with_llm(
         else:
             result["status"] = "false"
         
-        # Ensure all required fields
-        result.setdefault("explanation", "Verification completed")
+        # Ensure all required fields with meaningful defaults
+        if not result.get("explanation") or result.get("explanation") == "Verification completed":
+            result["explanation"] = "Based on web search results, this claim could not be fully verified with the available sources. Manual verification recommended."
         result.setdefault("correct_value", None)
         result.setdefault("confidence", "medium")
         result.setdefault("is_myth", False)
@@ -341,8 +425,7 @@ def verify_claim_with_llm(
 
 def verify_single_claim(claim_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Verify a single claim with multiple verification strategies.
-    Designed for high accuracy (99%+).
+    Fast + accurate verification: 1-2 smart searches, trusted source filtering.
     """
     llm = get_llm()
     
@@ -352,7 +435,7 @@ def verify_single_claim(claim_data: Dict[str, Any]) -> Dict[str, Any]:
     search_query = claim_data.get("search_query", claim_text)
     verification_focus = claim_data.get("verification_focus", "")
     
-    # Step 1: Check known myths database (instant detection)
+    # Step 1: Check known myths (instant - no search needed)
     myth_result = check_known_myths(claim_text)
     if myth_result:
         return {
@@ -362,44 +445,29 @@ def verify_single_claim(claim_data: Dict[str, Any]) -> Dict[str, Any]:
             **myth_result
         }
     
-    # Step 2: Gather evidence from multiple sources
-    all_search_results = []
+    # Step 2: Single smart search (fast)
+    # Use the optimized search query from claim extraction
+    search_results = search_web(search_query, max_results=8)
     
-    # Primary search with optimized query
-    all_search_results.extend(search_web(search_query, max_results=5))
+    # Only do backup search if we got very few results
+    if len(search_results) < 2:
+        backup = search_web(claim_text[:80], max_results=5)
+        search_results.extend(backup)
     
-    # Search fact-checking sites
-    fact_check_results = search_with_fact_check_sites(claim_text)
-    all_search_results.extend(fact_check_results)
-    
-    # Financial claims get special treatment
-    if claim_type == "financial" or any(word in claim_text.lower() for word in ['stock', 'price', 'market cap', 'revenue', 'billion', 'million', 'valuation']):
-        financial_results = search_financial_data(claim_text, entities)
-        all_search_results.extend(financial_results)
-        claim_type = "financial"
-    
-    # Keyword-based search as fallback
-    if len(all_search_results) < 3:
-        all_search_results.extend(search_with_keywords(claim_text))
-    
-    # Direct claim search if still few results
-    if len(all_search_results) < 3:
-        all_search_results.extend(search_web(claim_text[:100], max_results=5))
-    
-    # Deduplicate results
-    seen_urls = set()
+    # Deduplicate
+    seen = set()
     unique_results = []
-    for r in all_search_results:
+    for r in search_results:
         url = r.get("url", "")
-        if url and url not in seen_urls:
-            seen_urls.add(url)
+        if url and url not in seen:
+            seen.add(url)
             unique_results.append(r)
     
-    # Step 3: Verify with LLM
+    # Step 3: Verify with LLM using search evidence
     verification = verify_claim_with_llm(
         llm, 
         claim_text, 
-        unique_results[:10],  # Top 10 results
+        unique_results[:8],  # Top 8 results
         claim_type,
         verification_focus
     )
@@ -430,7 +498,7 @@ def verify_single_claim(claim_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Add search results as sources if needed
     if len(result["sources"]) < 3:
-        for sr in unique_results:
+        for sr in search_results:
             if len(result["sources"]) >= 3:
                 break
             if sr.get("url") and sr.get("url") not in [s.get("url") for s in result["sources"]]:
@@ -447,27 +515,30 @@ def verify_claims(
     claims: List[Dict[str, Any]],
     progress_callback=None
 ) -> List[Dict[str, Any]]:
-    """Verify all extracted claims with high accuracy."""
+    """Verify all claims with progress updates."""
     results = []
+    total = len(claims)
     
     for i, claim in enumerate(claims):
+        claim_text = claim.get("claim", "")
+        # Show claim number and preview of the claim text (shorter for same line)
+        preview = claim_text[:50] + "..." if len(claim_text) > 50 else claim_text
+        
         if progress_callback:
-            progress_callback(f"Verifying claim {i+1}/{len(claims)}...")
+            progress_callback(i + 1, total, preview)
         
         try:
             result = verify_single_claim(claim)
             results.append(result)
-            
-            # Small delay to avoid rate limiting
-            time.sleep(0.5)
-            
+            # Add delay so progress bar moves visibly (shorter delay for more claims)
+            time.sleep(0.3)
         except Exception as e:
             results.append({
-                "claim": claim.get("claim", "Unknown claim"),
+                "claim": claim_text,
                 "claim_type": claim.get("claim_type", "unknown"),
                 "entities": claim.get("entities", []),
                 "status": "false",
-                "explanation": f"Verification error: {str(e)}. Manual review recommended.",
+                "explanation": f"Could not verify: {str(e)}",
                 "correct_value": None,
                 "confidence": "low",
                 "is_myth": False,

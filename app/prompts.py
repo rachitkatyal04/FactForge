@@ -111,59 +111,73 @@ COMMON FALSE CLAIMS TO CATCH:
 
 Output ONLY valid JSON."""
 
-VERIFICATION_USER_PROMPT = """VERIFY THIS CLAIM (assume it might be false):
+VERIFICATION_USER_PROMPT = """VERIFY THIS CLAIM using the search results below:
 
 CLAIM: "{claim}"
 
-VERIFICATION FOCUS: {verification_focus}
+FOCUS: {verification_focus}
 
-WEB SEARCH RESULTS:
+SEARCH RESULTS:
 {search_results}
 
 INSTRUCTIONS:
-1. Compare claim against search results EXACTLY
-2. Check if numbers match precisely
-3. Check if data is current or outdated
-4. Look for contradictions
-5. Identify if this is a known myth
+1. Find relevant information in the search results above
+2. Compare the claim against what the sources say
+3. Write a DETAILED explanation citing the source name and what it says
 
-If claim says "X is 50%" but sources say "X is 48%" → INACCURATE (provide correct 48%)
-If claim says "founded in 2010" but sources say "2012" → INACCURATE (provide correct 2012)
-If no sources support the claim → FALSE
-If multiple sources confirm exactly → VERIFIED
+YOUR EXPLANATION MUST:
+- Name the source (e.g., "According to Wikipedia...", "Reuters reports that...")
+- Quote or paraphrase what the source says
+- Explain why the claim is verified/inaccurate/false based on that source
 
-Respond with ONLY this JSON:
+EXAMPLE GOOD EXPLANATION:
+"According to Reuters, Bitcoin reached an all-time high of $69,000 in November 2021. The claim states $42,500 which was the price during a different period. Based on CoinDesk data, this price level was seen in early 2024 during market consolidation."
+
+EXAMPLE BAD EXPLANATION (DO NOT DO THIS):
+"Verification completed" - THIS IS NOT ACCEPTABLE
+
+Return this JSON:
 {{
     "status": "verified|inaccurate|false",
-    "explanation": "Detailed analysis comparing claim to sources. Quote specific evidence.",
-    "correct_value": "The accurate/current value if inaccurate. Include year/date of data.",
+    "explanation": "According to [SOURCE NAME], [what the source says]. The claim states [X] but/and the source shows [Y]. Therefore the claim is [status] because [reason].",
+    "correct_value": null,
     "confidence": "high|medium|low",
     "is_myth": false,
     "is_outdated": false,
-    "sources": [
-        {{"title": "Source name", "url": "URL", "relevance": "What this source confirms/denies"}}
-    ]
+    "sources": [{{"title": "Source Name", "url": "URL", "relevance": "What it says"}}]
 }}
 
 JSON:"""
 
 # Special prompts for different claim types
-FINANCIAL_VERIFICATION_PROMPT = """VERIFY FINANCIAL CLAIM (data changes frequently):
+FINANCIAL_VERIFICATION_PROMPT = """VERIFY THIS FINANCIAL CLAIM (prices change daily):
 
 CLAIM: "{claim}"
 
 SEARCH RESULTS:
 {search_results}
 
-CRITICAL CHECKS:
-1. Is this the CURRENT value or an old figure?
-2. Stock prices change daily - what's the latest?
-3. Market caps fluctuate - verify against recent data
-4. Revenue/profit figures - which fiscal year?
+CHECKS:
+1. Is this the CURRENT price or outdated?
+2. What do the sources say the actual value is?
 
-If the claim uses old financial data, mark as INACCURATE and provide current value.
+YOUR EXPLANATION MUST:
+- Name the source (e.g., "According to Yahoo Finance...", "CoinDesk reports...")
+- State what price/value the source shows
+- Compare it to the claim
 
-JSON response:"""
+Return JSON:
+{{
+    "status": "verified|inaccurate|false",
+    "explanation": "According to [SOURCE], the current price/value is [X]. The claim states [Y]. Therefore...",
+    "correct_value": "Current value from sources if different",
+    "confidence": "high|medium|low",
+    "is_myth": false,
+    "is_outdated": true/false,
+    "sources": [{{"title": "Source", "url": "URL", "relevance": "What it says"}}]
+}}
+
+JSON:"""
 
 MYTH_DETECTION_PROMPT = """CHECK IF THIS IS A COMMON MYTH:
 

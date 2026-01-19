@@ -537,12 +537,14 @@ def main():
                 
                 # Step 3: Verify claims
                 status_text.text("✅ Verifying claims against web sources...")
+                total_claims = len(claims)
                 
-                def verify_progress(msg):
-                    status_text.text(f"✅ {msg}")
-                    # Update progress based on verification
-                    current = progress_bar._current_progress if hasattr(progress_bar, '_current_progress') else 40
-                    progress_bar.progress(min(40 + int(60 * (int(msg.split('/')[0].split()[-1]) / len(claims))), 95))
+                def verify_progress(current, total, claim_preview):
+                    # Show claim number AND preview on same line
+                    status_text.text(f"✅ Verifying claim {current}/{total}... {claim_preview}")
+                    # Smooth progress: 40% to 95%
+                    pct = 40 + int(55 * current / total)
+                    progress_bar.progress(min(pct, 95))
                 
                 results = verify_claims(claims, progress_callback=verify_progress)
                 
@@ -619,16 +621,83 @@ def main():
                 )
     
     else:
-        # Show placeholder when no file is uploaded
-        st.markdown("""
-        <div class="upload-area">
-            <h3>📤 Drop your PDF here</h3>
-            <p style="color: #94a3b8;">or click to browse files</p>
-            <p style="color: #64748b; font-size: 0.85rem; margin-top: 1rem;">
+        # Show styled box that also accepts drag-drop using components.html for JS
+        import streamlit.components.v1 as components
+        
+        components.html("""
+        <style>
+            #custom-drop-zone {
+                border: 2px dashed #475569;
+                border-radius: 12px;
+                padding: 3rem 2rem;
+                text-align: center;
+                background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+                transition: all 0.3s ease;
+                cursor: pointer;
+                font-family: 'Source Sans Pro', sans-serif;
+            }
+            #custom-drop-zone:hover, #custom-drop-zone.drag-over {
+                border-color: #6366f1;
+                background: linear-gradient(180deg, #1e293b 0%, #1e1b4b 100%);
+            }
+            #custom-drop-zone.drag-over {
+                border-color: #818cf8;
+                box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+            }
+        </style>
+        
+        <div id="custom-drop-zone">
+            <h3 style="color: #f8fafc; margin: 0 0 0.5rem 0; font-size: 1.5rem;">📤 Drop your PDF here</h3>
+            <p style="color: #94a3b8; margin: 0 0 0.5rem 0;">or click to browse files</p>
+            <p style="color: #64748b; font-size: 0.85rem; margin: 0;">
                 Supported format: PDF • Max recommended size: 10MB
             </p>
         </div>
-        """, unsafe_allow_html=True)
+        
+        <script>
+            const customZone = document.getElementById('custom-drop-zone');
+            
+            // Find the Streamlit file input in the parent document
+            const findUploaderInput = () => {
+                return window.parent.document.querySelector('[data-testid="stFileUploaderDropzone"] input[type="file"]');
+            };
+            
+            // Click on custom zone triggers file browser
+            customZone.addEventListener('click', () => {
+                const uploaderInput = findUploaderInput();
+                if (uploaderInput) uploaderInput.click();
+            });
+            
+            // Drag events
+            customZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                customZone.classList.add('drag-over');
+            });
+            
+            customZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                customZone.classList.remove('drag-over');
+            });
+            
+            customZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                customZone.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                const uploaderInput = findUploaderInput();
+                
+                if (files.length > 0 && uploaderInput) {
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(files[0]);
+                    uploaderInput.files = dataTransfer.files;
+                    uploaderInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        </script>
+        """, height=200)
 
 
 if __name__ == "__main__":

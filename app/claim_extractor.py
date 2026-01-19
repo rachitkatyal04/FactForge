@@ -15,7 +15,7 @@ from .prompts import CLAIM_EXTRACTION_SYSTEM_PROMPT, CLAIM_EXTRACTION_USER_PROMP
 
 
 def get_llm():
-    """Initialize the Groq LLM client with deterministic settings."""
+    """Initialize the Groq LLM client - fast model."""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY environment variable is not set")
@@ -24,8 +24,7 @@ def get_llm():
         model="llama-3.1-8b-instant",
         api_key=api_key,
         temperature=0,
-        max_tokens=4096,
-        seed=42
+        max_tokens=2048
     )
 
 
