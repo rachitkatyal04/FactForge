@@ -5,7 +5,7 @@
 **FactForge** is an intelligent fact-checking application that verifies factual claims in PDF documents before publishing. It uses AI to extract verifiable claims and cross-references them against live web sources.
 
 ## 📸 Glimpse of FactForge
-<img src="<img width="1918" height="925" alt="image" src="https://github.com/user-attachments/assets/a87dc1c6-ea15-4e08-a069-5046b7201acc" />
+<img width="1918" height="925" alt="image" src="https://github.com/user-attachments/assets/a87dc1c6-ea15-4e08-a069-5046b7201acc" />
 
 
 
