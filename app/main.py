@@ -472,34 +472,12 @@ def main():
         """)
     
     # Main content area
-    # File upload area with enhanced styling
     st.markdown("### 📄 Upload PDF Document")
-    st.markdown("""
-    <style>
-        [data-testid="stFileUploader"] {
-            width: 100%;
-        }
-        [data-testid="stFileUploader"] section {
-            padding: 2rem;
-            border: 2px dashed #6366f1;
-            border-radius: 12px;
-            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-        }
-        [data-testid="stFileUploader"] section:hover {
-            border-color: #818cf8;
-            background: linear-gradient(180deg, #1e293b 0%, #1e1b4b 100%);
-        }
-        [data-testid="stFileUploaderDropzone"] {
-            background: transparent !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader(
-        "📤 Drag and drop your PDF here or click to browse",
+        "Drag and drop your PDF here",
         type=["pdf"],
-        help="Upload a PDF document to check for factual accuracy",
-        accept_multiple_files=False
+        help="Upload a PDF document to check for factual accuracy"
     )
     
     if uploaded_file is not None:
@@ -641,28 +619,16 @@ def main():
                 )
     
     else:
-        # Show tips when no file is uploaded
-        st.info("👆 Click the upload area above or drag & drop a PDF file to begin fact-checking.")
-        
-        st.markdown("---")
-        st.markdown("### 💡 Tips for best results")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("""
-            **✅ Works best with:**
-            - Research papers
-            - News articles
-            - Business reports
-            - Financial documents
-            """)
-        with col2:
-            st.markdown("""
-            **⚠️ We detect:**
-            - Outdated statistics
-            - Common myths
-            - Wrong numbers/dates
-            - Fabricated claims
-            """)
+        # Show placeholder when no file is uploaded
+        st.markdown("""
+        <div class="upload-area">
+            <h3>📤 Drop your PDF here</h3>
+            <p style="color: #94a3b8;">or click to browse files</p>
+            <p style="color: #64748b; font-size: 0.85rem; margin-top: 1rem;">
+                Supported format: PDF • Max recommended size: 10MB
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
